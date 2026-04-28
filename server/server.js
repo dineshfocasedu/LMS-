@@ -19,6 +19,8 @@ app.use(cors({
     "http://localhost:8080",
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://admin-focas.netlify.app",
+    
     "https://september-subphenoid-celia.ngrok-free.dev"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
