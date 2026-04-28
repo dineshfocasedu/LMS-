@@ -24,9 +24,13 @@ app.use(cors({
     "https://focas.vercel.app",
     "https://september-subphenoid-celia.ngrok-free.dev"
   ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],  // ✅ Add OPTIONS
+  allowedHeaders: ["Content-Type", "Authorization"],      // ✅ Add this
   credentials: true
 }));
+
+// ✅ Handle preflight requests for ALL routes
+app.options('*', cors());
 
 
 app.use('/api/shopify', shopifyRoutes);
