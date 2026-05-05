@@ -149,13 +149,12 @@ export async function recordPurchase({ userId, products, source, orderId, curren
   const existingPurchase = await Purchase.findOne({ userId, orderId, source }).lean();
   const isNew = !existingPurchase;
 
-  // Upsert: one document per order — push new items into the array
+  // Upsert: one document per order — items only set on insert, never appended on retry
   await Purchase.updateOne(
     { userId, orderId, source },
     {
-      $setOnInsert: setOnInsert,
+      $setOnInsert: { ...setOnInsert, items },
       $set: setAlways,
-      $push: { items: { $each: items } }
     },
     { upsert: true }
   );

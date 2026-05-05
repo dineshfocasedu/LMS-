@@ -65,7 +65,7 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/accounts', accountsRoutes);
 
 // Health check
-app.get('/health', (req, res) => res.json({ status: 'ok HealtH' }));
+app.get('/health', (req, res) => res.json({ status: 'ok Health Success' }));
 
 // Start server
 const PORT = process.env.PORT || 5000;
