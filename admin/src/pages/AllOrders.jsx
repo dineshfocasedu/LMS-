@@ -154,7 +154,11 @@ function OrderDrawer({ orderId, onClose }) {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{item.name || item.productId?.name || '—'}</p>
-                      {item.category && <p className="text-xs text-gray-400">{item.category}{item.level ? ` · ${item.level}` : ''}</p>}
+                      {(item.category || item.subCategory || item.level) && (
+                        <p className="text-xs text-gray-400">
+                          {[item.category, item.subCategory, item.level].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                     </div>
                     <span className="text-sm font-semibold text-gray-700 whitespace-nowrap">
                       {item.amount ? `₹${item.amount.toLocaleString('en-IN')}` : '—'}
