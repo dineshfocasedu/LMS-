@@ -3,6 +3,7 @@ import crypto from "crypto"
 import Razorpay from "razorpay"
 import Product from "../models/Product.js"
 import Purchase from "../models/Purchase.js"
+import VideoProgress from "../models/VideoProgress.js"
 import { recordPurchase, getOrCreateUser } from "../services/accessService.js"
 
 const razorpay = new Razorpay({
@@ -165,11 +166,7 @@ export async function getMyPurchases(req, res) {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const { userId } = req.query;
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-    const query = { userId };
+    const query = { userId: req.user._id };
     const [purchases, total] = await Promise.all([
       Purchase.find(query)
         .populate('items.productId', 'name description price grants')
@@ -236,5 +233,95 @@ export async function getCourseById(req, res) {
     res.json({ product });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+// GET /api/purchase/my-courses  (auth required)
+// Two-path lookup so courses always show regardless of grants.courses string mismatch:
+//   Path A: user.access.*.courses → Product.grants.courses (handles Shopify/webhook access)
+//   Path B: paid purchases → productIds directly (handles admin grants, website purchases)
+export async function getMyCourses(req, res) {
+  try {
+    const user   = req.user
+    const access = user.access || {}
+    const enrolledCourseNames = [
+      ...(access.website?.courses || []),
+      ...(access.shopify?.courses || []),
+      ...(access.combo?.courses   || []),
+    ]
+
+    // Path A: grants string match
+    const byGrantsPromise = enrolledCourseNames.length > 0
+      ? Product.find({ 'grants.courses': { $in: enrolledCourseNames } }).lean()
+      : Promise.resolve([])
+
+    // Path B: direct paid purchase lookup
+    const purchases = await Purchase.find({ userId: user._id, status: 'paid' }).select('items source').lean()
+    const purchasedIds = [...new Set(purchases.flatMap(p => (p.items || []).map(i => i.productId?.toString()).filter(Boolean)))]
+    console.log(`[my-courses] user=${user._id} access=${JSON.stringify(enrolledCourseNames)} purchases=${purchases.length} productIds=${JSON.stringify(purchasedIds)}`)
+    const byPurchasePromise = purchasedIds.length > 0
+      ? Product.find({ _id: { $in: purchasedIds } }).lean()
+      : Promise.resolve([])
+
+    const [byGrants, byPurchase] = await Promise.all([byGrantsPromise, byPurchasePromise])
+
+    // Merge, deduplicate by product ID
+    const seen = new Set()
+    const allProducts = [...byGrants, ...byPurchase].filter(p => {
+      const id = p._id.toString()
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+
+    if (allProducts.length === 0) return res.json({ courses: [] })
+
+    const courses = allProducts.map(p => {
+      let source = 'website'
+      if ((access.shopify?.courses || []).some(c => (p.grants?.courses || []).includes(c))) source = 'shopify'
+      else if ((access.combo?.courses || []).some(c => (p.grants?.courses || []).includes(c))) source = 'combo'
+      return { product: p, source }
+    })
+
+    res.json({ courses })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+// POST /api/purchase/progress  (auth required)
+// Body: { contentId, productId, lastPosition, watchedSeconds }
+export async function saveProgress(req, res) {
+  try {
+    const { contentId, productId, lastPosition, watchedSeconds } = req.body
+    const userId = req.user._id
+
+    const update = { $max: { watchedSeconds: watchedSeconds || 0 } }
+    // Only overwrite lastPosition when caller has actual video currentTime (> 0)
+    const setFields = { ...(productId && { productId }) }
+    if (lastPosition > 0) setFields.lastPosition = lastPosition
+    if (Object.keys(setFields).length) update.$set = setFields
+
+    await VideoProgress.findOneAndUpdate({ userId, contentId }, update, { upsert: true })
+
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+// GET /api/purchase/progress?productId=  (auth required)
+export async function getProgress(req, res) {
+  try {
+    const { productId } = req.query
+    const filter = { userId: req.user._id }
+    if (productId) filter.productId = productId
+
+    const progress = await VideoProgress.find(filter).lean()
+    // Return as a map: { [contentId]: { lastPosition, watchedSeconds, completed } }
+    const map = {}
+    progress.forEach(p => { map[p.contentId.toString()] = p })
+    res.json({ progress: map })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 }

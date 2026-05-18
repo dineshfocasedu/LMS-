@@ -8,6 +8,7 @@ import InventoryLog from "../models/InventoryLog.js";
 import AccountsEntry from "../models/AccountsEntry.js";
 import Settings from "../models/Settings.js";
 import { sendLowStockAlert } from "../services/watiService.js";
+import { normalizePhone } from "../services/accessService.js";
 
 const KEY_ID         = process.env.RAZORPAY_KEY_ID;
 const KEY_SECRET     = process.env.RAZORPAY_KEY_SECRET;
@@ -38,7 +39,7 @@ async function createRazorpayLink(payload) {
 // Create user if not found, then apply grant courses/features to website access.
 // Grants are always applied immediately (on first payment / first EMI).
 async function createUserAndApplyGrants(phone, name, grantCourses, grantFeatures) {
-  const normalised = phone.replace(/\s/g, "");
+  const normalised = normalizePhone(phone);
 
   let user = await User.findOne({ phoneNumber: normalised });
   if (!user) {
@@ -65,9 +66,21 @@ async function createUserAndApplyGrants(phone, name, grantCourses, grantFeatures
   return user;
 }
 
+// 5-minute cache for the global settings singleton — avoids a DB hit on every webhook.
+let _settingsCache = null;
+let _settingsCacheAt = 0;
+const SETTINGS_TTL = 5 * 60_000;
+
+async function getSettings() {
+  if (_settingsCache && Date.now() - _settingsCacheAt < SETTINGS_TTL) return _settingsCache;
+  _settingsCache = await Settings.findById("global").lean().catch(() => null);
+  _settingsCacheAt = Date.now();
+  return _settingsCache;
+}
+
 // Decrement stock for each product that has inventory tracking enabled.
 async function decrementInventory(products, orderId) {
-  const settings = await Settings.findById("global").lean().catch(() => null);
+  const settings = await getSettings();
   const threshold = settings?.lowStockThreshold ?? 5;
   const alertPhones = settings?.alertPhones || [];
 

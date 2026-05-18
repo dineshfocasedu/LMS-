@@ -7,6 +7,7 @@ import Payment from "../models/Payment.js"
 import User from "../models/User.js"
 import InventoryLog from "../models/InventoryLog.js"
 import AccountsEntry from "../models/AccountsEntry.js"
+import { recordPurchase } from "../services/accessService.js"
 
 /**
  * POST /api/admin/products
@@ -420,5 +421,86 @@ export async function updatePurchaseNotes(req, res) {
     res.json({ success: true, notes: purchase.notes });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * POST /api/admin/users/:id/grant-access
+ * Manually grant product access to a user (creates a free custom purchase).
+ * Body: { productIds: string[] }
+ */
+export async function grantUserAccess(req, res) {
+  try {
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ error: 'User not found' })
+
+    const { productIds } = req.body
+    if (!Array.isArray(productIds) || productIds.length === 0) {
+      return res.status(400).json({ error: 'productIds array is required' })
+    }
+
+    const products = await Product.find({ _id: { $in: productIds } })
+    if (products.length === 0) return res.status(404).json({ error: 'No products found' })
+
+    await recordPurchase({
+      userId:           user._id,
+      products:         products.map(p => ({
+        productId:    p._id,
+        name:         p.name,
+        amount:       0,
+        category:     p.category,
+        subCategory:  p.subCategory,
+        level:        p.level,
+        shipToHome:   false,
+      })),
+      source:           'custom',
+      orderId:          `ADMIN-GRANT-${Date.now()}`,
+      currency:         'INR',
+      fulfillmentStatus: 'fulfilled',
+      customerPhone:    user.phoneNumber,
+      customerName:     user.name,
+    })
+
+    const updated = await User.findById(user._id).lean()
+    res.json({ ok: true, user: updated })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+/**
+ * GET /api/admin/users/:id
+ * Get a single user with their purchase summary.
+ */
+export async function getUser(req, res) {
+  try {
+    const [user, purchases] = await Promise.all([
+      User.findById(req.params.id).lean(),
+      Purchase.find({ userId: req.params.id }).sort({ createdAt: -1 }).lean(),
+    ])
+    if (!user) return res.status(404).json({ error: 'User not found' })
+    res.json({ user, purchases })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+/**
+ * GET /api/admin/students/:id/progress
+ * Admin view of a student's video watch progress.
+ */
+export async function getStudentProgress(req, res) {
+  try {
+    const VideoProgress = (await import('../models/VideoProgress.js')).default
+    const progress = await VideoProgress.find({ userId: req.params.id })
+      .populate('contentId', 'title type subject')
+      .populate('productId', 'name')
+      .sort({ updatedAt: -1 })
+      .lean()
+
+    const totalSeconds = progress.reduce((sum, p) => sum + (p.watchedSeconds || 0), 0)
+    res.json({ progress, totalSeconds })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 }

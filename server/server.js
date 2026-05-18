@@ -13,19 +13,30 @@ import accountsRoutes from "./routes/accounts.js"
 
 const app = express();
 
+// Trust reverse proxies (ngrok, nginx, Heroku, etc.) so req.protocol is https when it should be
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors({
   origin: [
     "http://localhost:8080",
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://localhost:5174",
     "https://admin-focas.netlify.app",
     "https://combo-focas.netlify.app",
     "https://focas.vercel.app",
-    "https://september-subphenoid-celia.ngrok-free.dev"
+    "https://sage-douhua-668f0c.netlify.app",
+    "https://extraordinary-mousse-64157e.netlify.app",
+    "https://estimate-pampers-collector.ngrok-free.dev",
+    "https://september-subsphenoid-celia.ngrok-free.dev",
+    "https://focaslms.netlify.app",
+    "https://carole-accommodative-rogelio.ngrok-free.dev",
+    "https://focasadmin.netlify.app",
+    "https://compile-wrongly-deceiver.ngrok-free.dev",
   ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],  // ✅ Add OPTIONS
-  allowedHeaders: ["Content-Type", "Authorization"],      // ✅ Add this
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
   credentials: true
 }));
 

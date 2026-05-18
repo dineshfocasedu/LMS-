@@ -1,11 +1,19 @@
 // controllers/accountsController.js
 import AccountsEntry from "../models/AccountsEntry.js";
 
+// 60-second in-memory cache for the summary aggregation (avoids repeated heavy queries)
+let summaryCache = null;
+let summaryCacheAt = 0;
+const SUMMARY_TTL = 60_000; // ms
+
 // ─── GET /api/accounts/summary ────────────────────────────────────────────────
 // Aggregates per-payment first so a receivable_payment can never make the
 // outstanding balance negative (guards against orphan entries from old data).
 export async function getAccountsSummary(_req, res) {
   try {
+    if (summaryCache && Date.now() - summaryCacheAt < SUMMARY_TTL) {
+      return res.json(summaryCache);
+    }
     const [salesAgg, refundAgg] = await Promise.all([
       AccountsEntry.aggregate([
         { $match: { type: { $in: ["sale", "receivable_created", "receivable_payment"] } } },
@@ -40,12 +48,14 @@ export async function getAccountsSummary(_req, res) {
     const totals  = salesAgg[0]  ?? { total_sales: 0, total_receivables: 0 };
     const refunds = refundAgg[0] ?? { total_refunds: 0 };
 
-    res.json({
+    summaryCache = {
       total_sales:       totals.total_sales,
       total_receivables: totals.total_receivables,
       total_refunds:     refunds.total_refunds,
       total_collected:   totals.total_sales - totals.total_receivables - refunds.total_refunds,
-    });
+    };
+    summaryCacheAt = Date.now();
+    res.json(summaryCache);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

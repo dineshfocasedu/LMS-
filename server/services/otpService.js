@@ -12,7 +12,7 @@ export function generateOTP() {
 
 export async function sendOTP(phoneNumber, otp) {
   try {
-    console.log(`Sending OTP ${otp} to ${phoneNumber}`);
+    console.log(`Sending OTP to ${phoneNumber}`);
 
     const cleanNumber = "+" + String(phoneNumber).replace(/\D/g, "");
     const encodedNumber = encodeURIComponent(cleanNumber);
@@ -46,6 +46,7 @@ export async function sendOTP(phoneNumber, otp) {
   }
 }
 export async function sendEmailOTP(email, otp) {
+  console.log(`Sending OTP to ${email}`);
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -60,4 +61,5 @@ export async function sendEmailOTP(email, otp) {
     subject: 'Your OTP Code',
     text: `Your OTP is ${otp}. It expires in 5 minutes.`,
   });
+   
 }

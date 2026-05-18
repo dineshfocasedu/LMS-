@@ -1,5 +1,7 @@
 // routes/admin.js
 import express from "express"
+import multer from "multer"
+import os from "os"
 import { adminAuth } from "../middleware/auth.js"
 import {
   createProduct,
@@ -7,6 +9,9 @@ import {
   deleteProduct,
   listProducts,
   listUsers,
+  getUser,
+  grantUserAccess,
+  getStudentProgress,
   listPurchases,
   getPurchase,
   updatePurchaseNotes,
@@ -22,6 +27,28 @@ import {
   getTopProducts,
 } from "../controllers/inventoryController.js"
 import { getSettings, updateSettings } from "../controllers/settingsController.js"
+import {
+  uploadContent,
+  prepareUpload,
+  markUploadComplete,
+  listContent,
+  listSubjects,
+  updateContent,
+  deleteContent,
+  previewContent,
+} from "../controllers/contentController.js"
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}_${file.originalname}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 10 GB max
+  fileFilter: (_req, file, cb) => {
+    const allowed = /^(video\/|application\/pdf)/.test(file.mimetype)
+    cb(allowed ? null : new Error('Only video and PDF files allowed'), allowed)
+  },
+})
 
 const router = express.Router();
 
@@ -34,8 +61,11 @@ router.post('/products', createProduct);
 router.put('/products/:id', updateProduct);
 router.delete('/products/:id', deleteProduct);
 
-// Users & Purchases (view only)
-router.get('/users', listUsers);
+// Users & Purchases
+router.get('/users',                        listUsers);
+router.get('/users/:id',                    getUser);
+router.post('/users/:id/grant-access',      grantUserAccess);
+router.get('/users/:id/progress',           getStudentProgress);
 router.get('/purchases', listPurchases);
 router.get('/purchases/:id', getPurchase);
 router.patch('/purchases/:id/notes',  updatePurchaseNotes);
@@ -55,5 +85,15 @@ router.get('/sales/top-products', getTopProducts);    // ?dateFrom=&dateTo=&limi
 // Settings
 router.get('/settings',  getSettings);
 router.put('/settings',  updateSettings);
+
+// Content (videos & PDFs stored in Bunny.net)
+router.post('/content/prepare-upload',       prepareUpload);
+router.post('/content/:id/upload-complete',  markUploadComplete);
+router.post('/content/upload',   upload.single('file'), uploadContent);
+router.get('/content',           listContent);
+router.get('/content/subjects',  listSubjects);
+router.get('/content/:id/preview', previewContent);
+router.put('/content/:id',       updateContent);
+router.delete('/content/:id',    deleteContent);
 
 export default router;

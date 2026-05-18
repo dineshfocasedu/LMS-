@@ -1,6 +1,6 @@
 // controllers/authController.js
 import User from "../models/User.js"
-import { generateToken } from "../middleware/auth.js";
+import { generateToken, clearUserCache } from "../middleware/auth.js";
 import {generateOTP, sendOTP, sendEmailOTP} from "../services/otpService.js"
 import { normalizePhone } from "../services/accessService.js"
 
@@ -95,6 +95,7 @@ const verifyOTPController = async (req, res) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         name: user.name,
+        isAdmin: user.isAdmin,
         access: user.access
       }
     });
@@ -119,20 +120,27 @@ const getMe = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const { name, email, phoneNumber } = req.body;
+    const updates = {};
+    if (name)        updates.name        = name;
+    if (email)       updates.email       = email.toLowerCase();
+    if (phoneNumber) updates.phoneNumber = normalizePhone(phoneNumber);
 
-    if (name) req.user.name = name;
-    if (email) req.user.email = email.toLowerCase();
-    if (phoneNumber) req.user.phoneNumber = phoneNumber;
+    const updated = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: updates },
+      { new: true, lean: true }
+    );
+    if (!updated) return res.status(404).json({ error: 'User not found' });
 
-    await req.user.save();
+    clearUserCache(req.user._id);
 
     res.json({
       success: true,
       user: {
-        id: req.user._id,
-        email: req.user.email,
-        phoneNumber: req.user.phoneNumber,
-        name: req.user.name
+        id: updated._id,
+        email: updated.email,
+        phoneNumber: updated.phoneNumber,
+        name: updated.name
       }
     });
   } catch (err) {

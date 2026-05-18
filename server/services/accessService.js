@@ -89,8 +89,8 @@ export async function updateUserAccess(userId) {
   };
 
   for (const purchase of purchases) {
-    const src = purchase.source; // 'shopify' | 'website' | 'combo'
-    if (!access[src]) continue; // guard against unknown sources
+    // 'custom' (admin grant) and any unknown source fall into 'website'
+    const src = ['shopify', 'website', 'combo'].includes(purchase.source) ? purchase.source : 'website'
     for (const item of purchase.items) {
       const product = item.productId; // populated
       if (!product || !product.grants) continue;
