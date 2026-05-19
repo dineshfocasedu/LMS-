@@ -11,6 +11,22 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
+// 2-minute cache for the public product list (Explore page).
+// Every student hitting the page saves a DB query.
+let _productsCache = null;
+let _productsCacheAt = 0;
+const PRODUCTS_TTL = 2 * 60_000;
+
+async function getCachedProducts() {
+  if (_productsCache && Date.now() - _productsCacheAt < PRODUCTS_TTL) return _productsCache;
+  _productsCache = await Product.find(
+    { showInComboStore: true },
+    'name description price shopifyPrice comboPrice originalPrice imageUrl category subCategory level isCourse shipToHome stock grants'
+  ).sort({ createdAt: -1 }).lean();
+  _productsCacheAt = Date.now();
+  return _productsCache;
+}
+
 /**
  * POST /api/purchase/create-order
  *
@@ -197,10 +213,7 @@ export async function getMyPurchases(req, res) {
  */
 export async function listProducts(_req, res) {
   try {
-    const products = await Product.find(
-      { showInComboStore: true },
-      'name description price shopifyPrice comboPrice originalPrice imageUrl category subCategory level isCourse shipToHome stock grants'
-    ).sort({ createdAt: -1 });
+    const products = await getCachedProducts();
     res.json({ products });
   } catch (err) {
     res.status(500).json({ error: err.message });

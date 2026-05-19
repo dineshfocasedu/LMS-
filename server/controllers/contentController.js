@@ -466,20 +466,30 @@ export async function listSubjects(_req, res) {
 
 // PUT /api/admin/content/:id
 export async function updateContent(req, res) {
-  const { title, description, subject, productIds: rawPIds, productId, order, isActive } = req.body
+  const { title, description, subject, productIds: rawPIds, productId, order, isActive, bunnyVideoId, status } = req.body
   const update = {}
-  if (title       !== undefined) update.title       = title.trim()
-  if (description !== undefined) update.description = description.trim()
-  if (subject     !== undefined) update.subject     = subject.trim()
-  if (rawPIds     !== undefined) {
+  if (title         !== undefined) update.title       = title.trim()
+  if (description   !== undefined) update.description = description.trim()
+  if (subject       !== undefined) update.subject     = subject.trim()
+  if (rawPIds       !== undefined) {
     update.productIds = parseProductIds(rawPIds)
-    update.productId  = null  // migrate legacy field on save
+    update.productId  = null
   } else if (productId !== undefined) {
     update.productIds = productId ? [productId] : []
     update.productId  = null
   }
   if (order    !== undefined) update.order    = parseInt(order)
   if (isActive !== undefined) update.isActive = isActive
+  if (bunnyVideoId !== undefined) {
+    update.bunnyVideoId = bunnyVideoId || null
+    if (bunnyVideoId) {
+      update.storagePath = `stream/${bunnyVideoId}`
+      update.url = `https://iframe.mediadelivery.net/embed/${BUNNY_STREAM_LIBRARY_ID}/${bunnyVideoId}`
+    }
+  }
+  if (status !== undefined) update.status = status
+
+  _contentCache.clear()  // Invalidate cached content lists when content changes
 
   const content = await Content.findByIdAndUpdate(req.params.id, update, { new: true })
     .populate('productIds', 'name level')
@@ -611,6 +621,9 @@ export async function getStreamUrl(req, res) {
 
   // Bunny Stream videos: signed embed URL — token expires in 2h, prevents URL sharing
   if (content.bunnyVideoId) {
+    if (!BUNNY_STREAM_LIBRARY_ID) {
+      return res.status(503).json({ error: 'Video streaming is not configured on this server.' })
+    }
     const expires = Math.floor(Date.now() / 1000) + 7200 // 2 hours
     const token = BUNNY_STREAM_TOKEN_KEY
       ? crypto.createHash('sha256').update(BUNNY_STREAM_TOKEN_KEY + content.bunnyVideoId + expires).digest('hex')
@@ -622,41 +635,55 @@ export async function getStreamUrl(req, res) {
     })
   }
 
-  // Legacy: Bunny Storage proxy with short-lived JWT
-  const st = jwt.sign(
-    { userId: req.user._id.toString(), contentId: content._id.toString(), t: 'stream' },
-    JWT_SECRET,
-    { expiresIn: '1h' }
-  )
+  // Legacy: Bunny Storage proxy — pre-signed path token (no auth header needed in browser)
+  const streamToken = _createStreamToken(req.user._id.toString(), content._id.toString())
   const baseUrl = process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`
-  const response = { url: `${baseUrl}/api/purchase/stream/${content._id}?st=${st}` }
-
-  if (content.hlsPath) {
-    response.hlsUrl = `${baseUrl}/api/purchase/hls/${content._id}/playlist.m3u8?st=${st}`
-  }
-
-  res.json(response)
+  res.json({ url: `${baseUrl}/api/purchase/stream/${content._id}/${streamToken}` })
 }
 
-// GET /api/purchase/stream/:contentId?st=TOKEN  (no auth header needed — token in query)
-// Proxies video/PDF bytes from Bunny Storage with range-request support for seeking.
-export async function streamContent(req, res) {
-  const { st } = req.query
-  if (!st) return res.status(401).json({ error: 'Stream token required' })
+// Pre-signed path tokens — access checked once in getStreamUrl (auth-gated), token stored
+// server-side so the browser can use the URL directly as <video src> without custom headers.
+// Token sits in the URL PATH (not query param) so reverse proxies never strip it.
+const _streamTokens = new Map()
+const _STREAM_TOKEN_TTL = 2 * 60 * 60 * 1000  // 2 hours
 
-  let payload
-  try {
-    payload = jwt.verify(st, JWT_SECRET)
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired stream token' })
+function _createStreamToken(userId, contentId) {
+  if (_streamTokens.size > 5000) {
+    const now = Date.now()
+    for (const [k, v] of _streamTokens) if (v.expiresAt <= now) _streamTokens.delete(k)
   }
+  const token = crypto.randomBytes(32).toString('hex')
+  _streamTokens.set(token, { userId, contentId, expiresAt: Date.now() + _STREAM_TOKEN_TTL })
+  return token
+}
 
-  if (payload.t !== 'stream' || payload.contentId !== req.params.contentId) {
-    return res.status(403).json({ error: 'Token mismatch' })
+function _verifyStreamToken(token, contentId) {
+  const e = _streamTokens.get(token)
+  if (!e || e.expiresAt <= Date.now() || e.contentId !== contentId) {
+    _streamTokens.delete(token)
+    return false
+  }
+  return true
+}
+
+// 2-minute cache for public content list per productId — same for every student
+const _contentCache = new Map()
+const _CONTENT_CACHE_TTL = 2 * 60_000
+
+// GET /api/purchase/stream/:contentId/:token  (no auth middleware — access checked at getStreamUrl)
+// Token lives in the URL path so proxies cannot strip it. Browser uses this URL directly
+// as <video src>, enabling native range-request streaming without downloading the full file.
+export async function streamContent(req, res) {
+  if (!_verifyStreamToken(req.params.token, req.params.contentId)) {
+    return res.status(401).json({ error: 'Invalid or expired stream token' })
   }
 
   const content = await Content.findById(req.params.contentId).select('storagePath type isActive')
   if (!content || !content.isActive) return res.status(404).json({ error: 'Not found' })
+
+  if (!BUNNY_API_KEY || !BUNNY_ZONE) {
+    return res.status(503).json({ error: 'Content storage is not configured on this server.' })
+  }
 
   // Fetch directly from Bunny Storage (server-to-server, no CDN token auth issues)
   const storageUrl = `${BUNNY_ENDPOINT}/${BUNNY_ZONE}/${content.storagePath}`
@@ -749,18 +776,33 @@ export async function hlsProxy(req, res) {
 // GET /api/purchase/content?subject=&productId=  (student-facing, no auth)
 export async function getPublicContent(req, res) {
   const { subject, productId } = req.query
-  const filter = { isActive: true, status: { $ne: 'processing' } }
-  if (subject) filter.subject = subject
+
+  // Per-product cache — content list is identical for all students in the same course (2-min TTL)
   if (productId) {
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.json({ content: [] })
+    if (!mongoose.Types.ObjectId.isValid(productId)) return res.json({ content: [] })
+    const cached = _contentCache.get(productId)
+    if (cached && cached.expiresAt > Date.now()) {
+      const items = subject ? cached.data.filter(c => c.subject === subject) : cached.data
+      return res.json({ content: items })
     }
-    filter.$or = [{ productIds: productId }, { productId: productId }]
+    const dbItems = await Content.find({
+      isActive: true,
+      status: { $ne: 'processing' },
+      $or: [{ productIds: productId }, { productId: productId }],
+    }).sort({ order: 1, createdAt: 1 })
+      .select('title description type subject url size order createdAt')
+      .lean()
+    _contentCache.set(productId, { data: dbItems, expiresAt: Date.now() + _CONTENT_CACHE_TTL })
+    const items = subject ? dbItems.filter(c => c.subject === subject) : dbItems
+    return res.json({ content: items })
   }
 
+  // No productId — uncached (rare path)
+  const filter = { isActive: true, status: { $ne: 'processing' } }
+  if (subject) filter.subject = subject
   const items = await Content.find(filter)
     .sort({ order: 1, createdAt: 1 })
     .select('title description type subject url size order createdAt')
-
+    .lean()
   res.json({ content: items })
 }

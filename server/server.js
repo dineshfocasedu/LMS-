@@ -33,10 +33,15 @@ app.use(cors({
     "https://focaslms.netlify.app",
     "https://carole-accommodative-rogelio.ngrok-free.dev",
     "https://focasadmin.netlify.app",
+    "https://lms.focasedu.com",
+    "https://focas-student-lms-app.vercel.app",
+    "https://focas-admin-app.vercel.app",
+    "https://focas-admin-lms-app.vercel.app",
     "https://compile-wrongly-deceiver.ngrok-free.dev",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
+  exposedHeaders: ["Content-Range", "Accept-Ranges", "Content-Length"],
   credentials: true
 }));
 
@@ -76,7 +81,7 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/accounts', accountsRoutes);
 
 // Health check
-app.get('/health', (req, res) => res.json({ status: 'ok Health Success' }));
+app.get('/health', (req, res) => res.json({ status: 'ok Health Success done' }));
 
 // Start server
 const PORT = process.env.PORT || 5000;

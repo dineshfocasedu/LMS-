@@ -20,7 +20,7 @@ router.get('/my-purchases',  auth, getMyPurchases);
 // Auth-gated
 router.get('/my-courses',              auth, getMyCourses);   // drives My Courses from user.access
 router.get('/stream-url/:contentId',   auth, getStreamUrl);   // issues short-lived proxy URL
-router.get('/stream/:contentId',            streamContent);   // proxies bytes — token in ?st= param
+router.get('/stream/:contentId/:token',     streamContent);   // proxies bytes — token in path
 router.get('/hls/:contentId/:filename',     hlsProxy);        // HLS playlist + segments — token in ?st=
 router.post('/progress',               auth, saveProgress);   // save video watch position
 router.get('/progress',                auth, getProgress);    // get progress map for a product
