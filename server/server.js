@@ -37,6 +37,7 @@ app.use(cors({
     "https://focas-student-lms-app.vercel.app",
     "https://focas-admin-app.vercel.app",
     "https://focas-admin-lms-app.vercel.app",
+    "https://focas-custom-product-app.vercel.app",
     "https://compile-wrongly-deceiver.ngrok-free.dev",
   ],
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
