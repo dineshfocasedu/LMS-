@@ -20,7 +20,7 @@ const PRODUCTS_TTL = 2 * 60_000;
 async function getCachedProducts() {
   if (_productsCache && Date.now() - _productsCacheAt < PRODUCTS_TTL) return _productsCache;
   _productsCache = await Product.find(
-    { $or: [{ showInComboStore: true }, { isBundle: true }] },
+    { showInComboStore: true },
     'name description price shopifyPrice comboPrice originalPrice imageUrl category subCategory level isCourse shipToHome stock grants isBundle bundleItems'
   ).sort({ createdAt: -1 }).lean();
   _productsCacheAt = Date.now();
