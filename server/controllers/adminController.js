@@ -8,6 +8,7 @@ import User from "../models/User.js"
 import InventoryLog from "../models/InventoryLog.js"
 import AccountsEntry from "../models/AccountsEntry.js"
 import { recordPurchase } from "../services/accessService.js"
+import { bustProductsCache } from "./purchaseController.js"
 
 /**
  * POST /api/admin/products
@@ -89,6 +90,7 @@ export async function createProduct(req, res) {
       });
     }
 
+    bustProductsCache();
     res.status(201).json({ success: true, product });
   } catch (err) {
     if (err.code === 11000) {
@@ -178,6 +180,7 @@ export async function updateProduct(req, res) {
       });
     }
 
+    bustProductsCache();
     res.json({ success: true, product });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -192,6 +195,7 @@ export async function deleteProduct(req, res) {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });
 
+    bustProductsCache();
     res.json({ success: true, message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
