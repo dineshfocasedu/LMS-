@@ -54,6 +54,16 @@ const productSchema = new mongoose.Schema({
 
   // Created inline during payment link generation (not a catalog product)
   isCustom: { type: Boolean, default: false },
+
+  // Bundle support — groups multiple products into one purchasable item
+  isBundle: { type: Boolean, default: false },
+  bundleItems: [{
+    product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+    name:       { type: String, required: true },
+    price:      { type: Number, default: 0 },
+    isCustom:   { type: Boolean, default: false },
+    _id:        false,
+  }],
 }, { timestamps: true });
 
 const Product = mongoose.model('Product', productSchema);

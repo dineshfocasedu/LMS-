@@ -27,7 +27,7 @@ import { recordPurchase } from "../services/accessService.js"
  */
 export async function createProduct(req, res) {
   try {
-    const { name, description, price, originalPrice, shopifyPrice, comboPrice, imageUrl, shopifyProductId, category, subCategory, level, weight, shipToHome, isCourse, grants, stock, showInComboStore } = req.body;
+    const { name, description, price, originalPrice, shopifyPrice, comboPrice, imageUrl, shopifyProductId, category, subCategory, level, weight, shipToHome, isCourse, grants, stock, showInComboStore, isBundle, bundleItems } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
@@ -35,6 +35,15 @@ export async function createProduct(req, res) {
 
     if (shipToHome && (!weight || Number(weight) <= 0)) {
       return res.status(400).json({ error: 'Weight (grams) is required for ShipToHome products' });
+    }
+
+    if (isBundle) {
+      if (!Array.isArray(bundleItems) || bundleItems.length === 0) {
+        return res.status(400).json({ error: 'A bundle must have at least one item' });
+      }
+      for (const bi of bundleItems) {
+        if (!bi.name?.trim()) return res.status(400).json({ error: 'Each bundle item must have a name' });
+      }
     }
 
     const product = await Product.create({
@@ -59,6 +68,13 @@ export async function createProduct(req, res) {
       },
       stock: stock != null ? stock : null,
       showInComboStore: showInComboStore ?? false,
+      isBundle: isBundle ?? false,
+      bundleItems: isBundle ? (bundleItems || []).map(bi => ({
+        product_id: bi.product_id || null,
+        name:       bi.name.trim(),
+        price:      Number(bi.price) || 0,
+        isCustom:   bi.isCustom ?? false,
+      })) : [],
     });
 
     // Log initial stock as restock if stock was provided
@@ -89,7 +105,7 @@ export async function createProduct(req, res) {
  */
 export async function updateProduct(req, res) {
   try {
-    const { name, description, price, originalPrice, shopifyPrice, comboPrice, imageUrl, shopifyProductId, category, subCategory, level, weight, shipToHome, isCourse, grants, stock, stockNote, showInComboStore } = req.body;
+    const { name, description, price, originalPrice, shopifyPrice, comboPrice, imageUrl, shopifyProductId, category, subCategory, level, weight, shipToHome, isCourse, grants, stock, stockNote, showInComboStore, isBundle, bundleItems } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -110,6 +126,20 @@ export async function updateProduct(req, res) {
       courses: grants.courses || [],
       features: grants.features || [],
     };
+    if (isBundle !== undefined) {
+      if (isBundle && Array.isArray(bundleItems)) {
+        for (const bi of bundleItems) {
+          if (!bi.name?.trim()) return res.status(400).json({ error: 'Each bundle item must have a name' });
+        }
+      }
+      updates.isBundle = isBundle;
+      updates.bundleItems = isBundle ? (bundleItems || []).map(bi => ({
+        product_id: bi.product_id || null,
+        name:       bi.name.trim(),
+        price:      Number(bi.price) || 0,
+        isCustom:   bi.isCustom ?? false,
+      })) : [];
+    }
 
     // Fetch current product for stock tracking and shipToHome/weight validation
     const current = await Product.findById(req.params.id).select('stock weight shipToHome').lean();
@@ -181,20 +211,22 @@ export async function listProducts(req, res) {
     const filter = req.query.filter || 'all';
 
     const query = {};
-    if (filter === 'catalog') query.isCustom = { $ne: true };
+    if (filter === 'catalog') { query.isCustom = { $ne: true }; query.isBundle = { $ne: true }; }
     if (filter === 'custom')  query.isCustom = true;
+    if (filter === 'bundle')  query.isBundle = true;
 
-    const [products, total, catalogCount, customCount] = await Promise.all([
+    const [products, total, catalogCount, customCount, bundleCount] = await Promise.all([
       Product.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
       Product.countDocuments(query),
-      Product.countDocuments({ isCustom: { $ne: true } }),
+      Product.countDocuments({ isCustom: { $ne: true }, isBundle: { $ne: true } }),
       Product.countDocuments({ isCustom: true }),
+      Product.countDocuments({ isBundle: true }),
     ]);
 
     res.json({
       products,
       pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
-      counts: { catalog: catalogCount, custom: customCount },
+      counts: { catalog: catalogCount, custom: customCount, bundle: bundleCount },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
