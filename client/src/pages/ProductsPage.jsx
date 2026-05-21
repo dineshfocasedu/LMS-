@@ -20,7 +20,13 @@ function StockBadge({ stock }) {
   )
 }
 
-function TypeBadge({ isCourse, shipToHome }) {
+function TypeBadge({ isCourse, shipToHome, isBundle, bundleItems }) {
+  if (isBundle)
+    return (
+      <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+        Bundle · {(bundleItems || []).length} items
+      </span>
+    )
   if (isCourse)
     return (
       <span className="text-xs font-medium bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
@@ -138,7 +144,7 @@ export default function ProductsPage({ onCheckout }) {
                     ) : (
                       <div className="w-full h-44 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-t-2xl flex items-center justify-center">
                         <span className="text-4xl">
-                          {product.isCourse ? '🎓' : '📦'}
+                          {product.isBundle ? '🎁' : product.isCourse ? '🎓' : '📦'}
                         </span>
                       </div>
                     )}
@@ -146,7 +152,7 @@ export default function ProductsPage({ onCheckout }) {
                     <div className="p-4 space-y-3">
                       {/* Badges */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <TypeBadge isCourse={product.isCourse} shipToHome={product.shipToHome} />
+                        <TypeBadge isCourse={product.isCourse} shipToHome={product.shipToHome} isBundle={product.isBundle} bundleItems={product.bundleItems} />
                         <StockBadge stock={product.stock} />
                         {product.level && (
                           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
@@ -158,9 +164,13 @@ export default function ProductsPage({ onCheckout }) {
                       {/* Name & description */}
                       <div>
                         <h3 className="font-semibold text-gray-900 leading-snug">{product.name}</h3>
-                        {product.description && (
+                        {product.isBundle && product.bundleItems?.length > 0 ? (
+                          <p className="text-xs text-amber-700 mt-1">
+                            Includes: {product.bundleItems.map(bi => bi.name).join(', ')}
+                          </p>
+                        ) : product.description ? (
                           <p className="text-xs text-gray-400 mt-1 line-clamp-2">{product.description}</p>
-                        )}
+                        ) : null}
                       </div>
 
                       {/* Price */}
