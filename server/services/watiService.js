@@ -107,19 +107,21 @@ export async function sendOrderWelcome(phone, name, templateName) {
 }
 
 /**
- * Sends an order_confirmation WhatsApp template to the customer after a
- * website or combo store purchase.
+ * Sends a purchase confirmation WhatsApp template to the customer.
+ * Website purchases  → order_confirmation_website
+ * Combo purchases    → order_conformation_custom
  * Template parameters: {{1}} = customer name
  *
- * @param {string} phone - customer phone, e.g. "7305504500" or "917305504500"
- * @param {string} name  - customer name
+ * @param {string} phone        - customer phone, e.g. "7305504500" or "917305504500"
+ * @param {string} name         - customer name
+ * @param {string} templateName - WATI template name to send
  */
-export async function sendPurchaseConfirmation(phone, name) {
+export async function sendPurchaseConfirmation(phone, name, templateName) {
   if (!WATI_BASE_URL || !WATI_API_TOKEN) {
     console.warn('⚠️  WATI credentials not set — skipping purchase confirmation');
     return;
   }
-  if (!phone) return;
+  if (!phone || !templateName) return;
 
   let normalised = phone.replace(/\D/g, '');
   if (normalised.length === 10) normalised = '91' + normalised;
@@ -128,8 +130,8 @@ export async function sendPurchaseConfirmation(phone, name) {
   const url = `${WATI_BASE_URL}/api/v1/sendTemplateMessage?whatsappNumber=${encodeURIComponent(whatsappNumber)}`;
 
   const body = {
-    template_name:  'order_confirmation',
-    broadcast_name: 'order_confirmation',
+    template_name:  templateName,
+    broadcast_name: templateName,
     parameters: [
       { name: '1', value: name || 'Student' },
     ],
@@ -148,12 +150,12 @@ export async function sendPurchaseConfirmation(phone, name) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      console.error(`❌ WATI order_confirmation failed [${response.status}] to ${whatsappNumber}:`, data);
+      console.error(`❌ WATI ${templateName} failed [${response.status}] to ${whatsappNumber}:`, data);
     } else {
-      console.log(`✅ WATI order_confirmation sent to ${whatsappNumber}`);
+      console.log(`✅ WATI ${templateName} sent to ${whatsappNumber}`);
     }
   } catch (err) {
-    console.error('❌ WATI order_confirmation request error:', err.message);
+    console.error(`❌ WATI ${templateName} request error:`, err.message);
   }
 }
 

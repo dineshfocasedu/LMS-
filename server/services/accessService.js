@@ -204,9 +204,13 @@ export async function recordPurchase({ userId, products, source, orderId, curren
       })
     );
 
-    // Send order_confirmation WhatsApp message to the customer
-    if (customerPhone) {
-      sendPurchaseConfirmation(customerPhone, customerName).catch(() => {});
+    // Send WhatsApp purchase confirmation to the customer
+    // website → order_confirmation_website  |  combo → order_conformation_custom
+    const confirmTemplate = source === 'combo' ? 'order_conformation_custom'
+      : source === 'website' ? 'order_confirmation_website'
+      : null;
+    if (customerPhone && confirmTemplate) {
+      sendPurchaseConfirmation(customerPhone, customerName, confirmTemplate).catch(() => {});
     }
   }
 
