@@ -211,7 +211,7 @@ export async function recordPurchase({ userId, products, source, orderId, curren
       if (source === 'website') {
         sendWebsitePurchaseConfirmation(customerPhone, customerName).catch(() => {});
       } else if (source === 'combo') {
-        sendComboPurchaseConfirmation(customerPhone).catch(() => {});
+        sendComboPurchaseConfirmation(customerPhone, customerName).catch(() => {});
       }
     }
   }

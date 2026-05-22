@@ -130,9 +130,9 @@ export async function sendWebsitePurchaseConfirmation(phone, name) {
     template_name:  'order_confirmation_website',
     broadcast_name: 'order_confirmation_website',
     parameters: [
-      { name: '1', value: name || 'Student' },
+      { name: 'name', value: name || 'Student' },
     ],
-    channel_number: WATI_CHANNEL_NUMBER,
+    channel_number: '916383514285',
   };
 
   try {
@@ -158,11 +158,12 @@ export async function sendWebsitePurchaseConfirmation(phone, name) {
 
 /**
  * Combo store purchase confirmation — template: order_conformation_custom
- * No parameters — fixed text template.
+ * Has {{name}} = customer name parameter.
  *
  * @param {string} phone - customer phone, e.g. "7305504500" or "917305504500"
+ * @param {string} name  - customer name sent as {{name}}
  */
-export async function sendComboPurchaseConfirmation(phone) {
+export async function sendComboPurchaseConfirmation(phone, name) {
   if (!WATI_BASE_URL || !WATI_API_TOKEN) {
     console.warn('⚠️  WATI credentials not set — skipping combo purchase confirmation');
     return;
@@ -178,8 +179,10 @@ export async function sendComboPurchaseConfirmation(phone) {
   const body = {
     template_name:  'order_conformation_custom',
     broadcast_name: 'order_conformation_custom',
-    parameters:     [],
-    channel_number: WATI_CHANNEL_NUMBER,
+    parameters: [
+      { name: 'name', value: name || 'Student' },
+    ],
+    channel_number: '916383514285',
   };
 
   try {
