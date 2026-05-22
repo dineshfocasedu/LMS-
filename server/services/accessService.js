@@ -3,6 +3,8 @@ import User from "../models/User.js"
 import Purchase from "../models/Purchase.js"
 import Product from "../models/Product.js"
 import InventoryLog from "../models/InventoryLog.js"
+import Settings from "../models/Settings.js"
+import { sendLowStockAlert, sendPurchaseConfirmation } from "./watiService.js"
 
 // Normalize phone to last 10 digits only
 export function normalizePhone(phone) {
@@ -162,6 +164,10 @@ export async function recordPurchase({ userId, products, source, orderId, curren
   // Reduce stock for each product (or each bundle component) that has stock tracking enabled.
   // isNew guard ensures idempotency — retries for the same order never double-decrement.
   if (isNew) {
+    const settings = await Settings.findById('global').lean().catch(() => null);
+    const threshold   = settings?.lowStockThreshold ?? 5;
+    const alertPhones = settings?.alertPhones || [];
+
     const decrementOne = async (productId, note) => {
       const prod = await Product.findById(productId).lean();
       if (!prod || prod.stock == null) return; // not tracked
@@ -177,6 +183,9 @@ export async function recordPurchase({ userId, products, source, orderId, curren
         orderId,
         note,
       });
+      if (alertPhones.length > 0 && stockAfter <= threshold) {
+        sendLowStockAlert(prod.name, stockAfter, alertPhones).catch(() => {});
+      }
     };
 
     await Promise.allSettled(
@@ -194,6 +203,11 @@ export async function recordPurchase({ userId, products, source, orderId, curren
         }
       })
     );
+
+    // Send order_confirmation WhatsApp message to the customer
+    if (customerPhone) {
+      sendPurchaseConfirmation(customerPhone, customerName).catch(() => {});
+    }
   }
 
   await updateUserAccess(userId);
