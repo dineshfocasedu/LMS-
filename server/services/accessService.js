@@ -4,7 +4,7 @@ import Purchase from "../models/Purchase.js"
 import Product from "../models/Product.js"
 import InventoryLog from "../models/InventoryLog.js"
 import Settings from "../models/Settings.js"
-import { sendLowStockAlert, sendPurchaseConfirmation } from "./watiService.js"
+import { sendLowStockAlert, sendWebsitePurchaseConfirmation, sendComboPurchaseConfirmation } from "./watiService.js"
 
 // Normalize phone to last 10 digits only
 export function normalizePhone(phone) {
@@ -205,12 +205,14 @@ export async function recordPurchase({ userId, products, source, orderId, curren
     );
 
     // Send WhatsApp purchase confirmation to the customer
-    // website → order_confirmation_website  |  combo → order_conformation_custom
-    const confirmTemplate = source === 'combo' ? 'order_conformation_custom'
-      : source === 'website' ? 'order_confirmation_website'
-      : null;
-    if (customerPhone && confirmTemplate) {
-      sendPurchaseConfirmation(customerPhone, customerName, confirmTemplate).catch(() => {});
+    // website → order_confirmation_website (has {{1}} name param)
+    // combo   → order_conformation_custom  (no params, fixed text)
+    if (customerPhone) {
+      if (source === 'website') {
+        sendWebsitePurchaseConfirmation(customerPhone, customerName).catch(() => {});
+      } else if (source === 'combo') {
+        sendComboPurchaseConfirmation(customerPhone).catch(() => {});
+      }
     }
   }
 
