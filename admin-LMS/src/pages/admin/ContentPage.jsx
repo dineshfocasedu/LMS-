@@ -51,12 +51,64 @@ function ProductPicker({ products, selected, onChange }) {
   )
 }
 
+const LEVELS = ['Foundation', 'Intermediate', 'Final']
+const LEVEL_COLORS = {
+  Foundation:   'bg-emerald-100 text-emerald-700',
+  Intermediate: 'bg-blue-100 text-blue-700',
+  Final:        'bg-purple-100 text-purple-700',
+}
+
+
+// Multi-select subject picker — checkboxes grouped by level
+function SubjectPicker({ subjects, selected, onChange }) {
+  const grouped = LEVELS.reduce((acc, l) => {
+    acc[l] = subjects.filter(s => s.level === l && s.isActive !== false)
+    return acc
+  }, {})
+
+  function toggle(id) {
+    onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id])
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {LEVELS.map(level => {
+        const levelSubjects = grouped[level]
+        if (!levelSubjects.length) return null
+        return (
+          <div key={level}>
+            <div className={`px-3 py-1.5 text-xs font-bold ${LEVEL_COLORS[level]} border-b border-gray-100`}>
+              {level}
+            </div>
+            <div className="max-h-32 overflow-y-auto">
+              {levelSubjects.map(s => (
+                <label key={s._id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(s._id)}
+                    onChange={() => toggle(s._id)}
+                    className="rounded border-gray-300 text-indigo-600"
+                  />
+                  <span className="text-sm text-gray-700">{s.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+      {subjects.length === 0 && (
+        <p className="text-xs text-gray-400 px-3 py-3">No subjects yet — create them in the Subjects page first</p>
+      )}
+    </div>
+  )
+}
+
 function UploadDrawer({ products, subjects, onClose, onUploaded }) {
   const fileRef    = useRef(null)
   const tusRef     = useRef(null)
   const [file,        setFile]       = useState(null)
   const [title,       setTitle]      = useState('')
-  const [subject,     setSubject]    = useState('')
+  const [subjectIds,  setSubjectIds] = useState([])
   const [productIds,  setProductIds] = useState([])
   const [desc,        setDesc]       = useState('')
   const [order,       setOrder]      = useState('0')
@@ -74,9 +126,9 @@ function UploadDrawer({ products, subjects, onClose, onUploaded }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!file)           return setError('Please select a file')
-    if (!title.trim())   return setError('Title is required')
-    if (!subject.trim()) return setError('Subject is required')
+    if (!file)              return setError('Please select a file')
+    if (!title.trim())      return setError('Title is required')
+    if (!subjectIds.length) return setError('Please select at least one subject')
     setError('')
     setUploading(true)
     setProgress(0)
@@ -89,7 +141,7 @@ function UploadDrawer({ products, subjects, onClose, onUploaded }) {
       const form = new FormData()
       form.append('file', file)
       form.append('title', title.trim())
-      form.append('subject', subject.trim())
+      subjectIds.forEach(id => form.append('subjectIds', id))
       form.append('description', desc.trim())
       form.append('order', order)
       productIds.forEach(id => form.append('productIds', id))
@@ -120,7 +172,7 @@ function UploadDrawer({ products, subjects, onClose, onUploaded }) {
       prepareData = await apiFetch('/api/admin/content/prepare-upload', {
         method: 'POST',
         body: JSON.stringify({
-          title: title.trim(), subject: subject.trim(),
+          title: title.trim(), subjectIds,
           description: desc.trim(), order, productIds,
           fileSize: file.size, fileName: file.name,
         }),
@@ -219,15 +271,16 @@ function UploadDrawer({ products, subjects, onClose, onUploaded }) {
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent" />
           </div>
 
-          {/* Subject */}
+          {/* Subjects */}
           <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Subject <span className="text-red-500">*</span></label>
-            <input type="text" value={subject} onChange={e => setSubject(e.target.value)}
-              list="subjects-list" placeholder="e.g. Financial Reporting"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent" />
-            <datalist id="subjects-list">
-              {subjects.map(s => <option key={s} value={s} />)}
-            </datalist>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Subject <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">(can pick multiple)</span>
+            </label>
+            <SubjectPicker subjects={subjects} selected={subjectIds} onChange={setSubjectIds} />
+            {subjectIds.length > 0 && (
+              <p className="text-xs text-indigo-600 mt-1">{subjectIds.length} subject{subjectIds.length > 1 ? 's' : ''} selected</p>
+            )}
           </div>
 
           {/* Products */}
@@ -298,7 +351,13 @@ function UploadDrawer({ products, subjects, onClose, onUploaded }) {
 
 function EditModal({ item, products, subjects, onClose, onSaved }) {
   const [title,      setTitle]      = useState(item.title)
-  const [subject,    setSubject]    = useState(item.subject)
+  const [subjectIds, setSubjectIds] = useState(() => {
+    // populate from subjectIds array, falling back to legacy subjectId
+    const fromArr = (item.subjectIds || []).map(s => s?._id || s).filter(Boolean)
+    if (fromArr.length) return fromArr
+    const legacy = item.subjectId?._id || item.subjectId
+    return legacy ? [String(legacy)] : []
+  })
   const [productIds, setProductIds] = useState(() => {
     const fromArr = (item.productIds || []).map(p => p?._id || p).filter(Boolean)
     if (fromArr.length) return fromArr
@@ -315,7 +374,7 @@ function EditModal({ item, products, subjects, onClose, onSaved }) {
     try {
       const data = await apiFetch(`/api/admin/content/${item._id}`, {
         method: 'PUT',
-        body: JSON.stringify({ title: title.trim(), subject: subject.trim(), productIds, description: desc.trim(), order: parseInt(order) }),
+        body: JSON.stringify({ title: title.trim(), subjectIds, productIds, description: desc.trim(), order: parseInt(order) }),
       })
       onSaved(data.content)
       onClose()
@@ -335,17 +394,20 @@ function EditModal({ item, products, subjects, onClose, onSaved }) {
             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-5 py-4 space-y-3 overflow-y-auto max-h-[70vh]">
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">Title</label>
             <input value={title} onChange={e => setTitle(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Subject</label>
-            <input value={subject} onChange={e => setSubject(e.target.value)} list="edit-subjects-list"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400" />
-            <datalist id="edit-subjects-list">{subjects.map(s => <option key={s} value={s} />)}</datalist>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">
+              Subject <span className="text-gray-400">(tick all that apply)</span>
+            </label>
+            <SubjectPicker subjects={subjects} selected={subjectIds} onChange={setSubjectIds} />
+            {subjectIds.length > 0 && (
+              <p className="text-xs text-indigo-600 mt-1">{subjectIds.length} subject{subjectIds.length > 1 ? 's' : ''} selected</p>
+            )}
           </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">
@@ -383,13 +445,14 @@ function EditModal({ item, products, subjects, onClose, onSaved }) {
 export default function ContentPage() {
   const [items,     setItems]     = useState([])
   const [products,  setProducts]  = useState([])
-  const [subjects,  setSubjects]  = useState([])
+  const [subjects,  setSubjects]  = useState([]) // Subject objects { _id, name, level }
   const [loading,   setLoading]   = useState(true)
   const [total,     setTotal]     = useState(0)
   const [page,      setPage]      = useState(1)
-  const [filterType,    setFType]     = useState('')
-  const [filterSubject, setFSubject]  = useState('')
-  const [search,        setSearch]    = useState('')
+  const [filterType,    setFType]      = useState('')
+  const [filterLevel,   setFLevel]     = useState('')
+  const [filterSubject, setFSubject]   = useState('')
+  const [search,        setSearch]     = useState('')
   const [showUpload,    setShowUpload] = useState(false)
   const [editItem,      setEditItem]  = useState(null)
   const [deleting,      setDeleting]  = useState(null)
@@ -398,25 +461,25 @@ export default function ContentPage() {
 
   useEffect(() => {
     apiFetch('/api/admin/products').then(d => setProducts(d.products || [])).catch(() => {})
-    apiFetch('/api/admin/content/subjects').then(d => setSubjects(d.subjects || [])).catch(() => {})
+    apiFetch('/api/admin/subjects').then(d => setSubjects(d.subjects || [])).catch(() => {})
   }, [])
 
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams({ page, limit: LIMIT })
-    if (filterType)    params.set('type',    filterType)
-    if (filterSubject) params.set('subject', filterSubject)
-    if (search)        params.set('search',  search)
+    if (filterType)    params.set('type',      filterType)
+    if (filterLevel)   params.set('level',     filterLevel)
+    if (filterSubject) params.set('subjectId', filterSubject)
+    if (search)        params.set('search',    search)
     apiFetch(`/api/admin/content?${params}`)
       .then(d => { setItems(d.content || []); setTotal(d.total || 0) })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [page, filterType, filterSubject, search])
+  }, [page, filterType, filterLevel, filterSubject, search])
 
   function handleUploaded(content) {
     setItems(prev => [content, ...prev])
     setTotal(t => t + 1)
-    if (!subjects.includes(content.subject)) setSubjects(s => [...s, content.subject].sort())
   }
 
   // Auto-refresh every 15 s while any video is still processing
@@ -425,15 +488,16 @@ export default function ContentPage() {
     if (!hasProcessing) return
     const timer = setInterval(() => {
       const params = new URLSearchParams({ page, limit: LIMIT })
-      if (filterType)    params.set('type',    filterType)
-      if (filterSubject) params.set('subject', filterSubject)
-      if (search)        params.set('search',  search)
+      if (filterType)    params.set('type',      filterType)
+      if (filterLevel)   params.set('level',     filterLevel)
+      if (filterSubject) params.set('subjectId', filterSubject)
+      if (search)        params.set('search',    search)
       apiFetch(`/api/admin/content?${params}`)
         .then(d => setItems(d.content || []))
         .catch(() => {})
     }, 15000)
     return () => clearInterval(timer)
-  }, [items, page, filterType, filterSubject, search])
+  }, [items, page, filterType, filterLevel, filterSubject, search])
 
   async function handleDelete(item) {
     if (!confirm(`Delete "${item.title}"? This will remove it from storage permanently.`)) return
@@ -451,7 +515,6 @@ export default function ContentPage() {
 
   function handleSaved(updated) {
     setItems(prev => prev.map(i => i._id === updated._id ? { ...i, ...updated } : i))
-    if (!subjects.includes(updated.subject)) setSubjects(s => [...s, updated.subject].sort())
   }
 
   const pages = Math.ceil(total / LIMIT)
@@ -500,34 +563,52 @@ export default function ContentPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[200px]">
-          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search titles…"
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400" />
+      <div className="bg-white rounded-2xl shadow-sm p-4 mb-4 space-y-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search titles…"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+
+          <select value={filterSubject} onChange={e => { setFSubject(e.target.value); setPage(1) }}
+            className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 bg-white min-w-[160px]">
+            <option value="">All Subjects</option>
+            {subjects
+              .filter(s => !filterLevel || s.level === filterLevel)
+              .map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+            {[['', 'All'], ['video', 'Videos'], ['pdf', 'PDFs']].map(([v, l]) => (
+              <button key={v} onClick={() => { setFType(v); setPage(1) }}
+                className={`px-3 py-2 font-medium transition-colors ${filterType === v ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {(search || filterSubject || filterType || filterLevel) && (
+            <button onClick={() => { setSearch(''); setFSubject(''); setFType(''); setFLevel(''); setPage(1) }}
+              className="text-xs text-indigo-600 font-medium hover:underline">Clear</button>
+          )}
         </div>
 
-        <select value={filterSubject} onChange={e => { setFSubject(e.target.value); setPage(1) }}
-          className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400 bg-white min-w-[160px]">
-          <option value="">All Subjects</option>
-          {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-          {[['', 'All'], ['video', 'Videos'], ['pdf', 'PDFs']].map(([v, l]) => (
-            <button key={v} onClick={() => { setFType(v); setPage(1) }}
-              className={`px-3 py-2 font-medium transition-colors ${filterType === v ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-              {l}
+        {/* Level tabs */}
+        <div className="flex gap-2">
+          {[['', 'All Levels'], ...LEVELS.map(l => [l, l])].map(([v, label]) => (
+            <button key={v} onClick={() => { setFLevel(v); setFSubject(''); setPage(1) }}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                filterLevel === v
+                  ? v === '' ? 'bg-gray-800 text-white' : `${LEVEL_COLORS[v]} ring-2 ring-offset-1 ring-current`
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}>
+              {label}
             </button>
           ))}
         </div>
-
-        {(search || filterSubject || filterType) && (
-          <button onClick={() => { setSearch(''); setFSubject(''); setFType(''); setPage(1) }}
-            className="text-xs text-indigo-600 font-medium hover:underline">Clear</button>
-        )}
       </div>
 
       {/* Table */}
@@ -590,8 +671,27 @@ export default function ContentPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3"><TypeBadge type={item.type} /></td>
-                <td className="px-4 py-3">
-                  <span className="inline-flex items-center text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">{item.subject}</span>
+                <td className="px-4 py-3 max-w-[180px]">
+                  {(() => {
+                    const subs = item.subjectIds?.length
+                      ? item.subjectIds
+                      : item.subjectId ? [item.subjectId] : []
+                    if (!subs.length) return <span className="text-xs text-gray-400">—</span>
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {subs.map((s, i) => (
+                          <div key={s._id || i} className="flex items-center gap-1.5">
+                            {s.level && (
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${LEVEL_COLORS[s.level] || 'bg-gray-100 text-gray-600'}`}>
+                                {s.level?.[0]}
+                              </span>
+                            )}
+                            <span className="text-xs text-gray-700 truncate">{s.name || item.subject}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-500">
                   {(item.productIds?.length

@@ -9,6 +9,7 @@ import InventoryLog from "../models/InventoryLog.js"
 import AccountsEntry from "../models/AccountsEntry.js"
 import { recordPurchase } from "../services/accessService.js"
 import { bustProductsCache } from "./purchaseController.js"
+import { clearProductCache } from "./contentController.js"
 
 /**
  * POST /api/admin/products
@@ -219,13 +220,21 @@ export async function listProducts(req, res) {
     if (filter === 'custom')  query.isCustom = true;
     if (filter === 'bundle')  query.isBundle = true;
 
-    const [products, total, catalogCount, customCount, bundleCount] = await Promise.all([
+    // One aggregation for all counts instead of 4 separate countDocuments calls
+    const [products, [counts]] = await Promise.all([
       Product.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      Product.countDocuments(query),
-      Product.countDocuments({ isCustom: { $ne: true }, isBundle: { $ne: true } }),
-      Product.countDocuments({ isCustom: true }),
-      Product.countDocuments({ isBundle: true }),
+      Product.aggregate([{ $group: {
+        _id: null,
+        total:    { $sum: 1 },
+        catalog:  { $sum: { $cond: [{ $and: [{ $ne: ['$isCustom', true] }, { $ne: ['$isBundle', true] }] }, 1, 0] } },
+        custom:   { $sum: { $cond: ['$isCustom', 1, 0] } },
+        bundle:   { $sum: { $cond: ['$isBundle',  1, 0] } },
+      }}]),
     ]);
+    const total        = filter === 'all' ? (counts?.total   || 0) : await Product.countDocuments(query);
+    const catalogCount = counts?.catalog || 0;
+    const customCount  = counts?.custom  || 0;
+    const bundleCount  = counts?.bundle  || 0;
 
     res.json({
       products,
@@ -525,6 +534,26 @@ export async function getUser(req, res) {
  * GET /api/admin/students/:id/progress
  * Admin view of a student's video watch progress.
  */
+/**
+ * PUT /api/admin/products/:id/content-access
+ * Set which CA levels and subjects this product grants access to.
+ */
+const CA_LEVELS_VALID = ['Foundation', 'Intermediate', 'Final']
+export async function updateProductContentAccess(req, res) {
+  const { levels = [], subjectIds = [] } = req.body
+  const validLevels     = levels.filter(l => CA_LEVELS_VALID.includes(l))
+  const validSubjectIds = subjectIds.filter(id => mongoose.Types.ObjectId.isValid(id))
+
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { contentAccess: { levels: validLevels, subjectIds: validSubjectIds } },
+    { new: true }
+  )
+  if (!product) return res.status(404).json({ error: 'Not found' })
+  clearProductCache(req.params.id)
+  res.json({ ok: true, contentAccess: product.contentAccess })
+}
+
 export async function getStudentProgress(req, res) {
   try {
     const VideoProgress = (await import('../models/VideoProgress.js')).default

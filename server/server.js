@@ -3,6 +3,7 @@ import 'dotenv/config'
 import express from "express"
 import mongoose from "mongoose"
 import cors from "cors"
+import { resumeProcessingPolls } from "./controllers/contentController.js"
 import authRoutes from "./routes/auth.js"
 import shopifyRoutes from "./routes/shopify.js"
 import purchaseRoutes from "./routes/purchase.js"
@@ -23,6 +24,7 @@ app.use(cors({
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://localhost:5175",
     "https://admin-focas.netlify.app",
     "https://combo-focas.netlify.app",
     "https://focas.vercel.app",
@@ -71,6 +73,7 @@ app.use((err, _req, res, next) => {
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/focas')
   .then(() => {
     console.log('✅ MongoDB Connected');
+    resumeProcessingPolls();
   })
   .catch(err => console.error('❌ MongoDB Error:', err));
 
